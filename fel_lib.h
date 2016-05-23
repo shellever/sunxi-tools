@@ -64,6 +64,11 @@ void aw_fel_write_buffer(feldev_handle *dev, void *buf, uint32_t offset,
 			 size_t len, bool progress);
 void aw_fel_execute(feldev_handle *dev, uint32_t offset);
 
+bool aw_fel_remotefunc_prepare(feldev_handle *dev, size_t stack_size,
+			       void *arm_code, size_t arm_code_size,
+			       size_t num_args, uint32_t *args);
+bool aw_fel_remotefunc_execute(feldev_handle *usb, uint32_t *result);
+
 void fel_readl_n(feldev_handle *dev, uint32_t addr, uint32_t *dst, size_t count);
 void fel_writel_n(feldev_handle *dev, uint32_t addr, uint32_t *src, size_t count);
 
