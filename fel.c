@@ -268,20 +268,6 @@ void aw_write_arm_cp_reg(feldev_handle *dev, soc_info_t *soc_info,
 	aw_fel_execute(dev, soc_info->scratch_addr);
 }
 
-/* "readl" of a single value */
-uint32_t fel_readl(feldev_handle *dev, uint32_t addr)
-{
-	uint32_t val;
-	fel_readl_n(dev, addr, &val, 1);
-	return val;
-}
-
-/* "writel" of a single value */
-void fel_writel(feldev_handle *dev, uint32_t addr, uint32_t val)
-{
-	fel_writel_n(dev, addr, &val, 1);
-}
-
 void aw_fel_print_sid(feldev_handle *dev, bool force_workaround)
 {
 	uint32_t key[4];

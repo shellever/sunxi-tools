@@ -368,6 +368,20 @@ void fel_writel_n(feldev_handle *dev, uint32_t addr, uint32_t *src, size_t count
 	}
 }
 
+/* "readl" of a single value */
+uint32_t fel_readl(feldev_handle *dev, uint32_t addr)
+{
+	uint32_t val;
+	fel_readl_n(dev, addr, &val, 1);
+	return val;
+}
+
+/* "writel" of a single value */
+void fel_writel(feldev_handle *dev, uint32_t addr, uint32_t val)
+{
+	fel_writel_n(dev, addr, &val, 1);
+}
+
 /*
  * move (arbitrary byte count) data between addresses within SoC memory
  *

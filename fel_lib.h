@@ -72,6 +72,9 @@ bool aw_fel_remotefunc_execute(feldev_handle *usb, uint32_t *result);
 void fel_readl_n(feldev_handle *dev, uint32_t addr, uint32_t *dst, size_t count);
 void fel_writel_n(feldev_handle *dev, uint32_t addr, uint32_t *src, size_t count);
 
+uint32_t fel_readl(feldev_handle *dev, uint32_t addr);
+void fel_writel(feldev_handle *dev, uint32_t addr, uint32_t val);
+
 void fel_memmove(feldev_handle *dev,
 		 uint32_t dst_addr, uint32_t src_addr, size_t size);
 
