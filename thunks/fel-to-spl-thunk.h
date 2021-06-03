@@ -1,79 +1,81 @@
 	/* <entry_point>: */
-	0xea000015, /*        0:    b          5c <setup_stack>             */
-	/* <stack_begin>: */
-	0xe1a00000, /*        4:    nop                                     */
-	0xe1a00000, /*        8:    nop                                     */
-	0xe1a00000, /*        c:    nop                                     */
-	0xe1a00000, /*       10:    nop                                     */
-	0xe1a00000, /*       14:    nop                                     */
-	0xe1a00000, /*       18:    nop                                     */
-	0xe1a00000, /*       1c:    nop                                     */
-	0xe1a00000, /*       20:    nop                                     */
-	/* <stack_end>: */
-	0xe1a00000, /*       24:    nop                                     */
+	0x0140006f, /*        0:    j          14 <setup_stack>             */
+	0x00000013, /*        4:    nop                                     */
+	/* <saved_sp>: */
+	0x00000013, /*        8:    nop                                     */
+	0x00000013, /*        c:    nop                                     */
 	/* <swap_all_buffers>: */
-	0xe28f40dc, /*       28:    add        r4, pc, #220                 */
-	/* <swap_next_buffer>: */
-	0xe4940004, /*       2c:    ldr        r0, [r4], #4                 */
-	0xe4941004, /*       30:    ldr        r1, [r4], #4                 */
-	0xe4946004, /*       34:    ldr        r6, [r4], #4                 */
-	0xe3560000, /*       38:    cmp        r6, #0                       */
-	0x012fff1e, /*       3c:    bxeq       lr                           */
-	/* <swap_next_word>: */
-	0xe5902000, /*       40:    ldr        r2, [r0]                     */
-	0xe5913000, /*       44:    ldr        r3, [r1]                     */
-	0xe2566004, /*       48:    subs       r6, r6, #4                   */
-	0xe4812004, /*       4c:    str        r2, [r1], #4                 */
-	0xe4803004, /*       50:    str        r3, [r0], #4                 */
-	0x1afffff9, /*       54:    bne        40 <swap_next_word>          */
-	0xeafffff3, /*       58:    b          2c <swap_next_buffer>        */
+	0x00008067, /*       10:    ret                                     */
 	/* <setup_stack>: */
-	0xe59f80a4, /*       5c:    ldr        r8, [pc, #164]               */
-	0xe24f0044, /*       60:    sub        r0, pc, #68                  */
-	0xe520d004, /*       64:    str        sp, [r0, #-4]!               */
-	0xe1a0d000, /*       68:    mov        sp, r0                       */
-	0xe10f2000, /*       6c:    mrs        r2, CPSR                     */
-	0xe92d4004, /*       70:    push       {r2, lr}                     */
-	0xe38220c0, /*       74:    orr        r2, r2, #192                 */
-	0xe121f002, /*       78:    msr        CPSR_c, r2                   */
-	0xee112f10, /*       7c:    mrc        15, 0, r2, cr1, cr0, {0}     */
-	0xe3013004, /*       80:    movw       r3, #4100                    */
-	0xe1120003, /*       84:    tst        r2, r3                       */
-	0x1a000012, /*       88:    bne        d8 <cache_is_unsupported>    */
-	0xebffffe5, /*       8c:    bl         28 <swap_all_buffers>        */
-	/* <verify_checksum>: */
-	0xe3067c39, /*       90:    movw       r7, #27705                   */
-	0xe3457f0a, /*       94:    movt       r7, #24330                   */
-	0xe1a00008, /*       98:    mov        r0, r8                       */
-	0xe5905010, /*       9c:    ldr        r5, [r0, #16]                */
-	/* <check_next_word>: */
-	0xe4902004, /*       a0:    ldr        r2, [r0], #4                 */
-	0xe2555004, /*       a4:    subs       r5, r5, #4                   */
-	0xe0877002, /*       a8:    add        r7, r7, r2                   */
-	0x1afffffb, /*       ac:    bne        a0 <check_next_word>         */
-	0xe598200c, /*       b0:    ldr        r2, [r8, #12]                */
-	0xe0577082, /*       b4:    subs       r7, r7, r2, lsl #1           */
-	0x1a00000a, /*       b8:    bne        e8 <checksum_is_bad>         */
-	0xe304262e, /*       bc:    movw       r2, #17966                   */
-	0xe3442c45, /*       c0:    movt       r2, #19525                   */
-	0xe5882008, /*       c4:    str        r2, [r8, #8]                 */
-	0xf57ff04f, /*       c8:    dsb        sy                           */
-	0xf57ff06f, /*       cc:    isb        sy                           */
-	0xe12fff38, /*       d0:    blx        r8                           */
-	0xea000006, /*       d4:    b          f4 <return_to_fel>           */
-	/* <cache_is_unsupported>: */
-	0xe3032f2e, /*       d8:    movw       r2, #16174                   */
-	0xe3432f3f, /*       dc:    movt       r2, #16191                   */
-	0xe5882008, /*       e0:    str        r2, [r8, #8]                 */
-	0xea000003, /*       e4:    b          f8 <return_to_fel_noswap>    */
-	/* <checksum_is_bad>: */
-	0xe304222e, /*       e8:    movw       r2, #16942                   */
-	0xe3442441, /*       ec:    movt       r2, #17473                   */
-	0xe5882008, /*       f0:    str        r2, [r8, #8]                 */
+	0x00000597, /*       14:    auipc      a1,0x0                       */
+	0x1145e583, /*       18:    lwu        a1,276(a1)                   */
+	0x00000397, /*       1c:    auipc      t2,0x0                       */
+	0xfec38393, /*       20:    addi       t2,t2,-20                    */
+	0x0023b023, /*       24:    sd         sp,0(t2)                     */
+	0xf7810113, /*       28:    addi       sp,sp,-136                   */
+	0x00113023, /*       2c:    sd         ra,0(sp)                     */
+	0x00313423, /*       30:    sd         gp,8(sp)                     */
+	0x00413823, /*       34:    sd         tp,16(sp)                    */
+	0x00813c23, /*       38:    sd         s0,24(sp)                    */
+	0x02913023, /*       3c:    sd         s1,32(sp)                    */
+	0x03213423, /*       40:    sd         s2,40(sp)                    */
+	0x03313823, /*       44:    sd         s3,48(sp)                    */
+	0x03413c23, /*       48:    sd         s4,56(sp)                    */
+	0x05513023, /*       4c:    sd         s5,64(sp)                    */
+	0x05613423, /*       50:    sd         s6,72(sp)                    */
+	0x05713823, /*       54:    sd         s7,80(sp)                    */
+	0x05813c23, /*       58:    sd         s8,88(sp)                    */
+	0x07913023, /*       5c:    sd         s9,96(sp)                    */
+	0x07a13423, /*       60:    sd         s10,104(sp)                  */
+	0x07b13823, /*       64:    sd         s11,112(sp)                  */
+	0x300023f3, /*       68:    csrr       t2,mstatus                   */
+	0x06713c23, /*       6c:    sd         t2,120(sp)                   */
+	0x304023f3, /*       70:    csrr       t2,mie                       */
+	0x08713023, /*       74:    sd         t2,128(sp)                   */
+	0x00000393, /*       78:    li         t2,0                         */
+	0x3043a073, /*       7c:    csrs       mie,t2                       */
+	0xf91ff0ef, /*       80:    jal        ra,10 <swap_all_buffers>     */
+	0x4c4543b7, /*       84:    lui        t2,0x4c454                   */
+	0x62e3839b, /*       88:    addiw      t2,t2,1582                   */
+	0x0075a423, /*       8c:    sw         t2,8(a1)                     */
+	0x000303b7, /*       90:    lui        t2,0x30                      */
+	0x0133839b, /*       94:    addiw      t2,t2,19                     */
+	0x7c23a073, /*       98:    csrs       0x7c2,t2                     */
+	0x00030e37, /*       9c:    lui        t3,0x30                      */
+	0x010e0e1b, /*       a0:    addiw      t3,t3,16                     */
+	/* <wait_flush_cache>: */
+	0x7c2023f3, /*       a4:    csrr       t2,0x7c2                     */
+	0x01c3f3b3, /*       a8:    and        t2,t2,t3                     */
+	0xfe039ce3, /*       ac:    bnez       t2,a4 <wait_flush_cache>     */
+	0x000580e7, /*       b0:    jalr       a1                           */
+	0x0040006f, /*       b4:    j          b8 <return_to_fel>           */
 	/* <return_to_fel>: */
-	0xebffffcb, /*       f4:    bl         28 <swap_all_buffers>        */
+	0xf59ff0ef, /*       b8:    jal        ra,10 <swap_all_buffers>     */
 	/* <return_to_fel_noswap>: */
-	0xe8bd4004, /*       f8:    pop        {r2, lr}                     */
-	0xe121f002, /*       fc:    msr        CPSR_c, r2                   */
-	0xe59dd000, /*      100:    ldr        sp, [sp]                     */
-	0xe12fff1e, /*      104:    bx         lr                           */
+	0x00000397, /*       bc:    auipc      t2,0x0                       */
+	0xf4c38393, /*       c0:    addi       t2,t2,-180                   */
+	0x0003b103, /*       c4:    ld         sp,0(t2)                     */
+	0xf7810113, /*       c8:    addi       sp,sp,-136                   */
+	0x00013083, /*       cc:    ld         ra,0(sp)                     */
+	0x00813183, /*       d0:    ld         gp,8(sp)                     */
+	0x01013203, /*       d4:    ld         tp,16(sp)                    */
+	0x01813403, /*       d8:    ld         s0,24(sp)                    */
+	0x02013483, /*       dc:    ld         s1,32(sp)                    */
+	0x02813903, /*       e0:    ld         s2,40(sp)                    */
+	0x03013983, /*       e4:    ld         s3,48(sp)                    */
+	0x03813a03, /*       e8:    ld         s4,56(sp)                    */
+	0x04013a83, /*       ec:    ld         s5,64(sp)                    */
+	0x04813b03, /*       f0:    ld         s6,72(sp)                    */
+	0x05013b83, /*       f4:    ld         s7,80(sp)                    */
+	0x05813c03, /*       f8:    ld         s8,88(sp)                    */
+	0x06013c83, /*       fc:    ld         s9,96(sp)                    */
+	0x06813d03, /*      100:    ld         s10,104(sp)                  */
+	0x07013d83, /*      104:    ld         s11,112(sp)                  */
+	0x07813383, /*      108:    ld         t2,120(sp)                   */
+	0x3003a073, /*      10c:    csrs       mstatus,t2                   */
+	0x08013383, /*      110:    ld         t2,128(sp)                   */
+	0x3043a073, /*      114:    csrs       mie,t2                       */
+	0x00000397, /*      118:    auipc      t2,0x0                       */
+	0xef038393, /*      11c:    addi       t2,t2,-272                   */
+	0x0003b103, /*      120:    ld         sp,0(t2)                     */
+	0x00008067, /*      124:    ret                                     */

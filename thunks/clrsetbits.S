@@ -3,14 +3,15 @@
  */
 
 fel_clrsetbits_le32:
-	ldr	r0, 1f		/* address */
-	ldr	r1, [r0]	/* load value */
-	ldr	r2, 2f		/* clrbits mask */
-	bic	r1, r2		/* clear bits, post-increment r1 */
-	ldr	r2, 3f		/* setbits mask */
-	orr	r1, r2		/* set bits (logical "or") */
-	str	r1, [r0]	/* store result */
-	bx	lr
+	lwu	t0, 1f		/* address */
+	lwu	t1, 0(t0)	/* load value */
+	lwu	t2, 2f		/* clrbits mask */
+	xori	t2, t2, -1	/* revert clrbits mask */
+	and	t1, t1, t2	/* clear bits (logical "and") */
+	lwu	t2, 3f		/* setbits mask */
+	or	t2, t2, t1	/* set bits (logical "or") */
+	sw	t2, 0(t0)	/* store result */
+	ret
 
 1:	.word	0	/* addr */
 2:	.word	0	/* clrbits (= bits to clear) */

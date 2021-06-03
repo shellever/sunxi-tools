@@ -49,10 +49,10 @@ TARGET_TOOLS = sunxi-meminfo
 MISC_TOOLS = phoenix_info sunxi-nand-image-builder
 
 # ARM binaries and images
-# Note: To use this target, set/adjust CROSS_COMPILE and MKSUNXIBOOT if needed
+# Note: To use this target, set/adjust CROSS_COMPILE and MKIMAGE if needed
 BINFILES = jtag-loop.sunxi fel-sdboot.sunxi uart0-helloworld-sdboot.sunxi
 
-MKSUNXIBOOT ?= mksunxiboot
+MKIMAGE ?= mkimage
 PATH_DIRS := $(shell echo $$PATH | sed -e 's/:/ /g')
 # Try to guess a suitable default ARM cross toolchain
 CROSS_DEFAULT := arm-none-eabi-
@@ -156,11 +156,11 @@ phoenix_info: phoenix_info.c
 	$(CROSS_COMPILE)objcopy -O binary $< $@
 
 %.sunxi: %.bin
-	$(MKSUNXIBOOT) $< $@
+	$(MKIMAGE) -A riscv -T sunxi_egon -d $< $@
 
-ARM_ELF_FLAGS = -Os -marm -fpic -Wall
+ARM_ELF_FLAGS = -Os -march=rv64g -fpic -Wall
 ARM_ELF_FLAGS += -fno-common -fno-builtin -ffreestanding -nostdinc -fno-strict-aliasing
-ARM_ELF_FLAGS += -mno-thumb-interwork -fno-stack-protector -fno-toplevel-reorder
+ARM_ELF_FLAGS += -fno-stack-protector -fno-toplevel-reorder
 ARM_ELF_FLAGS += -Wstrict-prototypes -Wno-format-nonliteral -Wno-format-security
 
 jtag-loop.elf: jtag-loop.c jtag-loop.lds

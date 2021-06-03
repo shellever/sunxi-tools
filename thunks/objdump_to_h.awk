@@ -8,15 +8,17 @@
 }
 
 # disassembly lines
-/[[:xdigit:]]+:/ {
+/^ +[[:xdigit:]]+:/ {
+	if ($3=="unimp")
+		exit
 	if (style=="old")
 		printf "\t0x%s, /* %9s    %-10s", $2, $1, $3
 	else
 		printf "\t\thtole32(0x%s), /* %5s  %-5s", $2, $1, $3
 
 	for (i = 4; i <= NF; i++)
-		if ($i == ";") {
-			# strip comment (anything after and including ';')
+		if ($i == "#") {
+			# strip comment (anything after and including '#')
 			NF = i - 1
 			break
 		}

@@ -61,117 +61,128 @@ __END__
 
 /*************************************************************************/
 
-BUF1		.req	r0
-BUF2		.req	r1
-TMP1		.req	r2
-TMP2		.req	r3
-SWAPTBL		.req	r4
-FULLSIZE	.req	r5
-BUFSIZE		.req	r6
-CHECKSUM	.req	r7
-SPL_ADDR	.req	r8
+#define BUF1		t0
+#define	BUF2		t1
+#define	TMP1		t2
+#define	TMP2		t3
+#define	SWAPTBL		t4
+#define	FULLSIZE	t5
+#define	BUFSIZE		t6
+#define	CHECKSUM	a0
+#define	SPL_ADDR	a1
 
 entry_point:
-	b	setup_stack
+	j	setup_stack
 
-stack_begin:
+.align 3
+saved_sp:
 	nop
-	nop
-	nop
-	nop
-	nop
-	nop
-	nop
-	nop
-stack_end:
 	nop
 
 	/* A function, which walks the table and swaps all buffers */
 swap_all_buffers:
-	adr	SWAPTBL,   appended_data + 4
-swap_next_buffer:
-	ldr	BUF1,      [SWAPTBL],  #4
-	ldr	BUF2,      [SWAPTBL],  #4
-	ldr	BUFSIZE,   [SWAPTBL],  #4
-	cmp	BUFSIZE,   #0
-	bxeq    lr
-swap_next_word:
-	ldr	TMP1,      [BUF1]
-	ldr	TMP2,      [BUF2]
-	subs	BUFSIZE,   BUFSIZE,    #4
-	str	TMP1,      [BUF2],     #4
-	str	TMP2,      [BUF1],     #4
-	bne	swap_next_word
-	b	swap_next_buffer
+	ret	/* TODO: on D1 nothing should be swapped now */
 
-setup_stack: /* Save the original SP, LR and CPSR to stack */
-	ldr	SPL_ADDR,  appended_data
-	adr	BUF1,      stack_end
-	str	sp,        [BUF1, #-4]!
-	mov	sp,        BUF1
-	mrs	TMP1,      cpsr
-	push	{TMP1, lr}
+setup_stack:
+	lwu	SPL_ADDR, appended_data
 
-	/* Disable IRQ and FIQ */
-	orr	TMP1,      #0xc0
-	msr	cpsr_c,    TMP1
+	/* save SP to memory */
+	la	TMP1, saved_sp
+	sd	sp, 0(TMP1)
 
-	/* Check if the instructions or data cache is enabled */
-	mrc	p15, 0, TMP1, c1, c0, 0
-	movw	TMP2,      #((1 << 12) | (1 << 2))
-	tst	TMP1,      TMP2
-	bne	cache_is_unsupported
+	/* Reserve stack space */
+	addi	sp, sp, -136
 
-	bl	swap_all_buffers
+	/* save a bunch of registers according to RISC-V psABI */
+	sd	ra, 0(sp)
+	sd	gp, 8(sp)
+	sd	tp, 16(sp)
+	sd	s0, 24(sp)
+	sd	s1, 32(sp)
+	sd	s2, 40(sp)
+	sd	s3, 48(sp)
+	sd	s4, 56(sp)
+	sd	s5, 64(sp)
+	sd	s6, 72(sp)
+	sd	s7, 80(sp)
+	sd	s8, 88(sp)
+	sd	s9, 96(sp)
+	sd	s10, 104(sp)
+	sd	s11, 112(sp)
 
-verify_checksum:
-	movw	CHECKSUM,  #0x6c39
-	movt	CHECKSUM,  #0x5f0a
-	mov	BUF1,      SPL_ADDR
-	ldr     FULLSIZE,  [BUF1, #16]
-check_next_word:
-	ldr	TMP1,      [BUF1],   #4
-	subs	FULLSIZE,  FULLSIZE, #4
-	add	CHECKSUM,  CHECKSUM, TMP1
-	bne	check_next_word
+	/* save mstatus */
+	csrr	TMP1, mstatus
+	sd	TMP1, 120(sp)
+	
+	/* save mie */
+	csrr	TMP1, mie
+	sd	TMP1, 128(sp)
 
-	ldr	TMP1,      [SPL_ADDR, #12]
-	subs	CHECKSUM,  CHECKSUM, TMP1, lsl #1
-	bne	checksum_is_bad
+	/* Disable IRQ */
+	li	TMP1, 0
+	csrs	mie, TMP1
+
+	jal	swap_all_buffers
 
 	/* Change 'eGON.BT0' -> 'eGON.FEL' */
-	movw	TMP1,      (('F' << 8) + '.')
-	movt	TMP1,      (('L' << 8) + 'E')
-	str	TMP1,      [SPL_ADDR, #8]
+	li	TMP1, (('L' << 24) + ('E' << 16) + ('F' << 8) + '.')
+	sw	TMP1, 8(SPL_ADDR)
+
+	/* Flush the cache */
+	li	TMP1, 0x30013
+	csrs	0x7c2, TMP1
+	li	TMP2, 0x30010
+wait_flush_cache:
+	csrr	TMP1, 0x7c2
+	and	TMP1, TMP1, TMP2
+	bnez	TMP1, wait_flush_cache
 
 	/* Call the SPL code */
-	dsb
-	isb
-	blx	SPL_ADDR
+	jalr	SPL_ADDR
 
 	/* Return back to FEL */
-	b	return_to_fel
-
-cache_is_unsupported:
-	/* Bail out if cache is enabled and change 'eGON.BT0' -> 'eGON.???' */
-	movw	TMP1,      (('?' << 8) + '.')
-	movt	TMP1,      (('?' << 8) + '?')
-	str	TMP1,      [SPL_ADDR, #8]
-	b	return_to_fel_noswap
-
-checksum_is_bad:
-	/* The checksum test failed, so change 'eGON.BT0' -> 'eGON.BAD' */
-	movw	TMP1,      (('B' << 8) + '.')
-	movt	TMP1,      (('D' << 8) + 'A')
-	str	TMP1,      [SPL_ADDR, #8]
+	j	return_to_fel
 
 return_to_fel:
-	bl	swap_all_buffers
+	jal	swap_all_buffers
 return_to_fel_noswap:
-	pop	{TMP1, lr}
-	msr	cpsr_c,    TMP1 /* Restore the original CPSR */
-	ldr     sp,        [sp]
-	bx	lr
+	/* load SP from memory */
+	la	TMP1, saved_sp
+	ld	sp, 0(TMP1)
+
+	/* Restore reserved stack space */
+	addi	sp, sp, -136
+
+	/* reload a bunch of registers according to RISC-V psABI */
+	ld	ra, 0(sp)
+	ld	gp, 8(sp)
+	ld	tp, 16(sp)
+	ld	s0, 24(sp)
+	ld	s1, 32(sp)
+	ld	s2, 40(sp)
+	ld	s3, 48(sp)
+	ld	s4, 56(sp)
+	ld	s5, 64(sp)
+	ld	s6, 72(sp)
+	ld	s7, 80(sp)
+	ld	s8, 88(sp)
+	ld	s9, 96(sp)
+	ld	s10, 104(sp)
+	ld	s11, 112(sp)
+
+	/* reload mstatus */
+	ld	TMP1, 120(sp)
+	csrs	mstatus, TMP1
+	
+	/* reload mie */
+	ld	TMP1, 128(sp)
+	csrs	mie, TMP1
+
+	/* reload SP from memory */
+	la	TMP1, saved_sp
+	ld	sp, 0(TMP1)
+
+	ret
 
 appended_data:
 /*

@@ -8,3 +8,4 @@ sunxi-pio
 version.h
 *.o
 *.swp
+*.elf

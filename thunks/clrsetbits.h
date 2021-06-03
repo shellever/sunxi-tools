@@ -1,9 +1,13 @@
 		/* <fel_clrsetbits_le32>: */
-		htole32(0xe59f0018), /*    0:  ldr   r0, [pc, #24]           */
-		htole32(0xe5901000), /*    4:  ldr   r1, [r0]                */
-		htole32(0xe59f2014), /*    8:  ldr   r2, [pc, #20]           */
-		htole32(0xe1c11002), /*    c:  bic   r1, r1, r2              */
-		htole32(0xe59f2010), /*   10:  ldr   r2, [pc, #16]           */
-		htole32(0xe1811002), /*   14:  orr   r1, r1, r2              */
-		htole32(0xe5801000), /*   18:  str   r1, [r0]                */
-		htole32(0xe12fff1e), /*   1c:  bx    lr                      */
+		htole32(0x00000297), /*    0:  auipc t0,0x0                  */
+		htole32(0x0302e283), /*    4:  lwu   t0,48(t0)               */
+		htole32(0x0002e303), /*    8:  lwu   t1,0(t0)                */
+		htole32(0x00000397), /*    c:  auipc t2,0x0                  */
+		htole32(0x0283e383), /*   10:  lwu   t2,40(t2)               */
+		htole32(0xfff3c393), /*   14:  not   t2,t2                   */
+		htole32(0x00737333), /*   18:  and   t1,t1,t2                */
+		htole32(0x00000397), /*   1c:  auipc t2,0x0                  */
+		htole32(0x01c3e383), /*   20:  lwu   t2,28(t2)               */
+		htole32(0x0063e3b3), /*   24:  or    t2,t2,t1                */
+		htole32(0x0072a023), /*   28:  sw    t2,0(t0)                */
+		htole32(0x00008067), /*   2c:  ret                           */

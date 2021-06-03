@@ -5,7 +5,7 @@
 scan_path () {
 IFS=":"
 for path in $PATH; do
-	find "$path" -maxdepth 1 -executable -name 'arm*-gcc' -printf '%f\t' 2>/dev/null
+	find "$path" -maxdepth 1 -executable -name 'riscv64*-gcc' -printf '%f\t' 2>/dev/null
 done
 }
 

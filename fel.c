@@ -361,46 +361,6 @@ static uint32_t fel_to_spl_thunk[] = {
 #define	DRAM_BASE		0x40000000
 #define	DRAM_SIZE		0x80000000
 
-uint32_t aw_read_arm_cp_reg(feldev_handle *dev, soc_info_t *soc_info,
-			    uint32_t coproc, uint32_t opc1, uint32_t crn,
-			    uint32_t crm, uint32_t opc2)
-{
-	uint32_t val = 0;
-	uint32_t opcode = 0xEE000000 | (1 << 20) | (1 << 4)
-			  | ((opc1 & 0x7) << 21) | ((crn & 0xF) << 16)
-			  | ((coproc & 0xF) << 8) | ((opc2 & 0x7) << 5)
-			  | (crm & 0xF);
-	uint32_t arm_code[] = {
-		htole32(opcode),     /* mrc  coproc, opc1, r0, crn, crm, opc2 */
-		htole32(0xe58f0000), /* str  r0, [pc]                         */
-		htole32(0xe12fff1e), /* bx   lr                               */
-	};
-	aw_fel_write(dev, arm_code, soc_info->scratch_addr, sizeof(arm_code));
-	aw_fel_execute(dev, soc_info->scratch_addr);
-	aw_fel_read(dev, soc_info->scratch_addr + 12, &val, sizeof(val));
-	return le32toh(val);
-}
-
-void aw_write_arm_cp_reg(feldev_handle *dev, soc_info_t *soc_info,
-			 uint32_t coproc, uint32_t opc1, uint32_t crn,
-			 uint32_t crm, uint32_t opc2, uint32_t val)
-{
-	uint32_t opcode = 0xEE000000 | (0 << 20) | (1 << 4)
-			  | ((opc1 & 0x7) << 21) | ((crn & 0xF) << 16)
-			  | ((coproc & 0xF) << 8) | ((opc2 & 7) << 5)
-			  | (crm & 0xF);
-	uint32_t arm_code[] = {
-		htole32(0xe59f000c), /* ldr  r0, [pc, #12]                    */
-		htole32(opcode),     /* mcr  coproc, opc1, r0, crn, crm, opc2 */
-		htole32(0xf57ff04f), /* dsb  sy                               */
-		htole32(0xf57ff06f), /* isb  sy                               */
-		htole32(0xe12fff1e), /* bx   lr                               */
-		htole32(val)
-	};
-	aw_fel_write(dev, arm_code, soc_info->scratch_addr, sizeof(arm_code));
-	aw_fel_execute(dev, soc_info->scratch_addr);
-}
-
 /* "readl" of a single value */
 uint32_t fel_readl(feldev_handle *dev, uint32_t addr)
 {
@@ -440,284 +400,19 @@ void aw_fel_print_sid(feldev_handle *dev, bool force_workaround)
 		printf("%08x%c", key[i], i < 3 ? ':' : '\n');
 }
 
-void aw_enable_l2_cache(feldev_handle *dev, soc_info_t *soc_info)
-{
-	uint32_t arm_code[] = {
-		htole32(0xee112f30), /* mrc        15, 0, r2, cr1, cr0, {1}  */
-		htole32(0xe3822002), /* orr        r2, r2, #2                */
-		htole32(0xee012f30), /* mcr        15, 0, r2, cr1, cr0, {1}  */
-		htole32(0xe12fff1e), /* bx         lr                        */
-	};
-
-	aw_fel_write(dev, arm_code, soc_info->scratch_addr, sizeof(arm_code));
-	aw_fel_execute(dev, soc_info->scratch_addr);
-}
-
 void aw_get_stackinfo(feldev_handle *dev, soc_info_t *soc_info,
                       uint32_t *sp_irq, uint32_t *sp)
 {
 	uint32_t results[2] = { 0 };
-#if 0
-	/* Does not work on Cortex-A8 (needs Virtualization Extensions) */
 	uint32_t arm_code[] = {
-		htole32(0xe1010300), /* mrs        r0, SP_irq                */
-		htole32(0xe58f0004), /* str        r0, [pc, #4]              */
-		htole32(0xe58fd004), /* str        sp, [pc, #4]              */
-		htole32(0xe12fff1e), /* bx         lr                        */
+#include "thunks/get_stackinfo.h"
 	};
 
 	aw_fel_write(dev, arm_code, soc_info->scratch_addr, sizeof(arm_code));
 	aw_fel_execute(dev, soc_info->scratch_addr);
-	aw_fel_read(dev, soc_info->scratch_addr + 0x10, results, 8);
-#else
-	/* Works everywhere */
-	uint32_t arm_code[] = {
-		htole32(0xe10f0000), /* mrs        r0, CPSR                  */
-		htole32(0xe3c0101f), /* bic        r1, r0, #31               */
-		htole32(0xe3811012), /* orr        r1, r1, #18               */
-		htole32(0xe121f001), /* msr        CPSR_c, r1                */
-		htole32(0xe1a0100d), /* mov        r1, sp                    */
-		htole32(0xe121f000), /* msr        CPSR_c, r0                */
-		htole32(0xe58f1004), /* str        r1, [pc, #4]              */
-		htole32(0xe58fd004), /* str        sp, [pc, #4]              */
-		htole32(0xe12fff1e), /* bx         lr                        */
-	};
-
-	aw_fel_write(dev, arm_code, soc_info->scratch_addr, sizeof(arm_code));
-	aw_fel_execute(dev, soc_info->scratch_addr);
-	aw_fel_read(dev, soc_info->scratch_addr + 0x24, results, 8);
-#endif
-	*sp_irq = le32toh(results[0]);
-	*sp     = le32toh(results[1]);
-}
-
-uint32_t aw_get_ttbr0(feldev_handle *dev, soc_info_t *soc_info)
-{
-	return aw_read_arm_cp_reg(dev, soc_info, 15, 0, 2, 0, 0);
-}
-
-uint32_t aw_get_ttbcr(feldev_handle *dev, soc_info_t *soc_info)
-{
-	return aw_read_arm_cp_reg(dev, soc_info, 15, 0, 2, 0, 2);
-}
-
-uint32_t aw_get_dacr(feldev_handle *dev, soc_info_t *soc_info)
-{
-	return aw_read_arm_cp_reg(dev, soc_info, 15, 0, 3, 0, 0);
-}
-
-uint32_t aw_get_sctlr(feldev_handle *dev, soc_info_t *soc_info)
-{
-	return aw_read_arm_cp_reg(dev, soc_info, 15, 0, 1, 0, 0);
-}
-
-void aw_set_ttbr0(feldev_handle *dev, soc_info_t *soc_info,
-		  uint32_t ttbr0)
-{
-	return aw_write_arm_cp_reg(dev, soc_info, 15, 0, 2, 0, 0, ttbr0);
-}
-
-void aw_set_ttbcr(feldev_handle *dev, soc_info_t *soc_info,
-		  uint32_t ttbcr)
-{
-	return aw_write_arm_cp_reg(dev, soc_info, 15, 0, 2, 0, 2, ttbcr);
-}
-
-void aw_set_dacr(feldev_handle *dev, soc_info_t *soc_info,
-		 uint32_t dacr)
-{
-	aw_write_arm_cp_reg(dev, soc_info, 15, 0, 3, 0, 0, dacr);
-}
-
-void aw_set_sctlr(feldev_handle *dev, soc_info_t *soc_info,
-		  uint32_t sctlr)
-{
-	aw_write_arm_cp_reg(dev, soc_info, 15, 0, 1, 0, 0, sctlr);
-}
-
-/*
- * Issue a "smc #0" instruction. This brings a SoC booted in "secure boot"
- * state from the default non-secure FEL into secure FEL.
- * This crashes on devices using "non-secure boot", as the BROM does not
- * provide a handler address in MVBAR. So we have a runtime check.
- */
-void aw_apply_smc_workaround(feldev_handle *dev)
-{
-	soc_info_t *soc_info = dev->soc_info;
-	uint32_t val;
-	uint32_t arm_code[] = {
-		htole32(0xe1600070), /* smc	#0	*/
-		htole32(0xe12fff1e), /* bx	lr	*/
-	};
-
-	/* Return if the SoC does not need this workaround */
-	if (!soc_info->needs_smc_workaround_if_zero_word_at_addr)
-		return;
-
-	/* This has less overhead than fel_readl_n() and may be good enough */
-	aw_fel_read(dev, soc_info->needs_smc_workaround_if_zero_word_at_addr,
-	            &val, sizeof(val));
-
-	/* Return if the workaround is not needed or has been already applied */
-	if (val != 0)
-		return;
-
-	pr_info("Applying SMC workaround... ");
-	aw_fel_write(dev, arm_code, soc_info->scratch_addr, sizeof(arm_code));
-	aw_fel_execute(dev, soc_info->scratch_addr);
-	pr_info(" done.\n");
-}
-
-/*
- * Reconstruct the same MMU translation table as used by the A20 BROM.
- * We are basically reverting the changes, introduced in newer SoC
- * variants. This works fine for the SoC variants with the memory
- * layout similar to A20 (the SRAM is in the first megabyte of the
- * address space and the BROM is in the last megabyte of the address
- * space).
- */
-uint32_t *aw_generate_mmu_translation_table(void)
-{
-	uint32_t *tt = malloc(4096 * sizeof(uint32_t));
-	uint32_t i;
-
-	/*
-	 * Direct mapping using 1MB sections with TEXCB=00000 (Strongly
-	 * ordered) for all memory except the first and the last sections,
-	 * which have TEXCB=00100 (Normal). Domain bits are set to 1111
-	 * and AP bits are set to 11, but this is mostly irrelevant.
-	 */
-	for (i = 0; i < 4096; i++)
-		tt[i] = 0x00000DE2 | (i << 20);
-	tt[0x000] |= 0x1000;
-	tt[0xFFF] |= 0x1000;
-
-	return tt;
-}
-
-uint32_t *aw_backup_and_disable_mmu(feldev_handle *dev,
-                                    soc_info_t *soc_info)
-{
-	uint32_t *tt = NULL;
-	uint32_t sctlr, ttbr0, ttbcr, dacr;
-	uint32_t i;
-
-	uint32_t arm_code[] = {
-		/* Disable I-cache, MMU and branch prediction */
-		htole32(0xee110f10), /* mrc        15, 0, r0, cr1, cr0, {0}  */
-		htole32(0xe3c00001), /* bic        r0, r0, #1                */
-		htole32(0xe3c00b06), /* bic        r0, r0, #0x1800           */
-		htole32(0xee010f10), /* mcr        15, 0, r0, cr1, cr0, {0}  */
-		/* Return back to FEL */
-		htole32(0xe12fff1e), /* bx         lr                        */
-	};
-
-	/*
-	 * Below are some checks for the register values, which are known
-	 * to be initialized in this particular way by the existing BROM
-	 * implementations. We don't strictly need them to exactly match,
-	 * but still have these safety guards in place in order to detect
-	 * and review any potential configuration changes in future SoC
-	 * variants (if one of these checks fails, then it is not a serious
-	 * problem but more likely just an indication that one of these
-	 * checks needs to be relaxed).
-	 */
-
-	/* Basically, ignore M/Z/I/V/UNK bits and expect no TEX remap */
-	sctlr = aw_get_sctlr(dev, soc_info);
-	if ((sctlr & ~((0x7 << 11) | (1 << 6) | 1)) != 0x00C50038)
-		pr_fatal("Unexpected SCTLR (%08X)\n", sctlr);
-
-	if (!(sctlr & 1)) {
-		pr_info("MMU is not enabled by BROM\n");
-		return NULL;
-	}
-
-	dacr = aw_get_dacr(dev, soc_info);
-	if (dacr != 0x55555555)
-		pr_fatal("Unexpected DACR (%08X)\n", dacr);
-
-	ttbcr = aw_get_ttbcr(dev, soc_info);
-	if (ttbcr != 0x00000000)
-		pr_fatal("Unexpected TTBCR (%08X)\n", ttbcr);
-
-	ttbr0 = aw_get_ttbr0(dev, soc_info);
-	if (ttbr0 & 0x3FFF)
-		pr_fatal("Unexpected TTBR0 (%08X)\n", ttbr0);
-
-	tt = malloc(16 * 1024);
-	pr_info("Reading the MMU translation table from 0x%08X\n", ttbr0);
-	aw_fel_read(dev, ttbr0, tt, 16 * 1024);
-	for (i = 0; i < 4096; i++)
-		tt[i] = le32toh(tt[i]);
-
-	/* Basic sanity checks to be sure that this is a valid table */
-	for (i = 0; i < 4096; i++) {
-		if (((tt[i] >> 1) & 1) != 1 || ((tt[i] >> 18) & 1) != 0)
-			pr_fatal("MMU: not a section descriptor\n");
-		if ((tt[i] >> 20) != i)
-			pr_fatal("MMU: not a direct mapping\n");
-	}
-
-	pr_info("Disabling I-cache, MMU and branch prediction...");
-	aw_fel_write(dev, arm_code, soc_info->scratch_addr, sizeof(arm_code));
-	aw_fel_execute(dev, soc_info->scratch_addr);
-	pr_info(" done.\n");
-
-	return tt;
-}
-
-void aw_restore_and_enable_mmu(feldev_handle *dev,
-                               soc_info_t *soc_info,
-                               uint32_t *tt)
-{
-	uint32_t i;
-	uint32_t ttbr0 = aw_get_ttbr0(dev, soc_info);
-
-	uint32_t arm_code[] = {
-		/* Invalidate I-cache, TLB and BTB */
-		htole32(0xe3a00000), /* mov        r0, #0                    */
-		htole32(0xee080f17), /* mcr        15, 0, r0, cr8, cr7, {0}  */
-		htole32(0xee070f15), /* mcr        15, 0, r0, cr7, cr5, {0}  */
-		htole32(0xee070fd5), /* mcr        15, 0, r0, cr7, cr5, {6}  */
-		htole32(0xf57ff04f), /* dsb        sy                        */
-		htole32(0xf57ff06f), /* isb        sy                        */
-		/* Enable I-cache, MMU and branch prediction */
-		htole32(0xee110f10), /* mrc        15, 0, r0, cr1, cr0, {0}  */
-		htole32(0xe3800001), /* orr        r0, r0, #1                */
-		htole32(0xe3800b06), /* orr        r0, r0, #0x1800           */
-		htole32(0xee010f10), /* mcr        15, 0, r0, cr1, cr0, {0}  */
-		/* Return back to FEL */
-		htole32(0xe12fff1e), /* bx         lr                        */
-	};
-
-	pr_info("Setting write-combine mapping for DRAM.\n");
-	for (i = (DRAM_BASE >> 20); i < ((DRAM_BASE + DRAM_SIZE) >> 20); i++) {
-		/* Clear TEXCB bits */
-		tt[i] &= ~((7 << 12) | (1 << 3) | (1 << 2));
-		/* Set TEXCB to 00100 (Normal uncached mapping) */
-		tt[i] |= (1 << 12);
-	}
-
-	pr_info("Setting cached mapping for BROM.\n");
-	/* Clear TEXCB bits first */
-	tt[0xFFF] &= ~((7 << 12) | (1 << 3) | (1 << 2));
-	/* Set TEXCB to 00111 (Normal write-back cached mapping) */
-	tt[0xFFF] |= (1 << 12) | /* TEX */
-		     (1 << 3)  | /* C */
-		     (1 << 2);   /* B */
-
-	pr_info("Writing back the MMU translation table.\n");
-	for (i = 0; i < 4096; i++)
-		tt[i] = htole32(tt[i]);
-	aw_fel_write(dev, tt, ttbr0, 16 * 1024);
-
-	pr_info("Enabling I-cache, MMU and branch prediction...");
-	aw_fel_write(dev, arm_code, soc_info->scratch_addr, sizeof(arm_code));
-	aw_fel_execute(dev, soc_info->scratch_addr);
-	pr_info(" done.\n");
-
-	free(tt);
+	aw_fel_read(dev, soc_info->scratch_addr + sizeof(arm_code), results, 8);
+	*sp_irq = le32toh(results[1]);
+	*sp     = le32toh(results[0]);
 }
 
 /* Minimum offset of the main U-Boot image within u-boot-sunxi-with-spl.bin. */
@@ -734,7 +429,6 @@ uint32_t aw_fel_write_and_execute_spl(feldev_handle *dev, uint8_t *buf, size_t l
 	uint32_t spl_checksum, spl_len, spl_len_limit;
 	uint32_t *buf32 = (uint32_t *)buf;
 	uint32_t cur_addr = soc_info->spl_addr;
-	uint32_t *tt = NULL;
 
 	if (!soc_info || !soc_info->swap_buffers)
 		pr_fatal("SPL: Unsupported SoC type\n");
@@ -754,35 +448,8 @@ uint32_t aw_fel_write_and_execute_spl(feldev_handle *dev, uint8_t *buf, size_t l
 	if (spl_checksum != 0)
 		pr_fatal("SPL: checksum check failed\n");
 
-	if (soc_info->needs_l2en) {
-		pr_info("Enabling the L2 cache\n");
-		aw_enable_l2_cache(dev, soc_info);
-	}
-
 	aw_get_stackinfo(dev, soc_info, &sp_irq, &sp);
 	pr_info("Stack pointers: sp_irq=0x%08X, sp=0x%08X\n", sp_irq, sp);
-
-	tt = aw_backup_and_disable_mmu(dev, soc_info);
-	if (!tt && soc_info->mmu_tt_addr) {
-		if (soc_info->mmu_tt_addr & 0x3FFF)
-			pr_fatal("SPL: 'mmu_tt_addr' must be 16K aligned\n");
-		pr_info("Generating the new MMU translation table at 0x%08X\n",
-			soc_info->mmu_tt_addr);
-		/*
-		 * These settings are used by the BROM in A10/A13/A20 and
-		 * we replicate them here when enabling the MMU. The DACR
-		 * value 0x55555555 means that accesses are checked against
-		 * the permission bits in the translation tables for all
-		 * domains. The TTBCR value 0x00000000 means that the short
-		 * descriptor translation table format is used, TTBR0 is used
-		 * for all the possible virtual addresses (N=0) and that the
-		 * translation table must be aligned at a 16K boundary.
-		 */
-		aw_set_dacr(dev, soc_info, 0x55555555);
-		aw_set_ttbcr(dev, soc_info, 0x00000000);
-		aw_set_ttbr0(dev, soc_info, soc_info->mmu_tt_addr);
-		tt = aw_generate_mmu_translation_table();
-	}
 
 	spl_len_limit = soc_info->sram_size;
 
@@ -855,10 +522,6 @@ uint32_t aw_fel_write_and_execute_spl(feldev_handle *dev, uint8_t *buf, size_t l
 	aw_fel_read(dev, soc_info->spl_addr + 4, header_signature, 8);
 	if (strcmp(header_signature, "eGON.FEL") != 0)
 		pr_fatal("SPL: failure code '%s'\n", header_signature);
-
-	/* re-enable the MMU if it was enabled by BROM */
-	if (tt != NULL)
-		aw_restore_and_enable_mmu(dev, soc_info, tt);
 
 	return spl_len;
 }
@@ -1047,56 +710,6 @@ void pass_fel_information(feldev_handle *dev,
 		aw_fel_write(dev, transfer,
 			soc_info->spl_addr + 0x18, sizeof(transfer));
 	}
-}
-
-/*
- * This function stores a given entry point to the RVBAR address for CPU0,
- * and then writes the Reset Management Register to request a warm boot.
- * It is useful with some AArch64 transitions, e.g. when passing control to
- * ARM Trusted Firmware (ATF) during the boot process of Pine64.
- *
- * The code was inspired by
- * https://github.com/apritzel/u-boot/commit/fda6bd1bf285c44f30ea15c7e6231bf53c31d4a8
- */
-void aw_rmr_request(feldev_handle *dev, uint32_t entry_point, bool aarch64)
-{
-	soc_info_t *soc_info = dev->soc_info;
-	if (!soc_info->rvbar_reg) {
-		pr_error("ERROR: Can't issue RMR request!\n"
-			 "RVBAR is not supported or unknown for your SoC (%s).\n",
-			 dev->soc_name);
-		return;
-	}
-
-	uint32_t rmr_mode = (1 << 1) | (aarch64 ? 1 : 0); /* RR, AA64 flag */
-	uint32_t arm_code[] = {
-		htole32(0xe59f0028), /* ldr        r0, [rvbar_reg]          */
-		htole32(0xe59f1028), /* ldr        r1, [entry_point]        */
-		htole32(0xe5801000), /* str        r1, [r0]                 */
-		htole32(0xf57ff04f), /* dsb        sy                       */
-		htole32(0xf57ff06f), /* isb        sy                       */
-
-		htole32(0xe59f101c), /* ldr        r1, [rmr_mode]           */
-		htole32(0xee1c0f50), /* mrc        15, 0, r0, cr12, cr0, {2}*/
-		htole32(0xe1800001), /* orr        r0, r0, r1               */
-		htole32(0xee0c0f50), /* mcr        15, 0, r0, cr12, cr0, {2}*/
-		htole32(0xf57ff06f), /* isb        sy                       */
-
-		htole32(0xe320f003), /* loop:      wfi                      */
-		htole32(0xeafffffd), /* b          <loop>                   */
-
-		htole32(soc_info->rvbar_reg),
-		htole32(entry_point),
-		htole32(rmr_mode)
-	};
-	/* scratch buffer setup: transfers ARM code and parameter values */
-	aw_fel_write(dev, arm_code, soc_info->scratch_addr, sizeof(arm_code));
-	/* execute the thunk code (triggering a warm reset on the SoC) */
-	pr_info("Store entry point 0x%08X to RVBAR 0x%08X, "
-		"and request warm reset with RMR mode %u...",
-		entry_point, soc_info->rvbar_reg, rmr_mode);
-	aw_fel_execute(dev, soc_info->scratch_addr);
-	pr_info(" done.\n");
 }
 
 /* Use the watchdog to simply reboot.  Useful to get out of fel without
@@ -1323,9 +936,6 @@ int main(int argc, char **argv)
 	 */
 	handle = feldev_open(busnum, devnum, AW_USB_VENDOR_ID, AW_USB_PRODUCT_ID);
 
-	/* Some SoCs need the SMC workaround to enter the secure boot mode */
-	aw_apply_smc_workaround(handle);
-
 	/* Handle command-style arguments, in order of appearance */
 	while (argc > 1 ) {
 		int skip = 1;
@@ -1350,11 +960,6 @@ int main(int argc, char **argv)
 		} else if (strncmp(argv[1], "exe", 3) == 0 && argc > 2) {
 			aw_fel_execute(handle, strtoul(argv[2], NULL, 0));
 			skip=3;
-		} else if (strcmp(argv[1], "reset64") == 0 && argc > 2) {
-			aw_rmr_request(handle, strtoul(argv[2], NULL, 0), true);
-			/* Cancel U-Boot autostart, and stop processing args */
-			uboot_autostart = false;
-			break;
 		} else if (strcmp(argv[1], "wdreset") == 0) {
 			aw_wd_reset(handle);
 		} else if (strncmp(argv[1], "ver", 3) == 0) {
@@ -1443,10 +1048,7 @@ int main(int argc, char **argv)
 	/* auto-start U-Boot if requested (by the "uboot" command) */
 	if (uboot_autostart) {
 		pr_info("Starting U-Boot (0x%08X).\n", uboot_entry);
-		if (enter_in_aarch64)
-			aw_rmr_request(handle, uboot_entry, true);
-		else
-			aw_fel_execute(handle, uboot_entry);
+		aw_fel_execute(handle, uboot_entry);
 	}
 
 	feldev_done(handle);

@@ -252,7 +252,7 @@ void aw_fel_write_buffer(feldev_handle *dev, const void *buf, uint32_t offset,
  * (256 32-bit words) on readl_n/writel_n transfers. To guarantee this, we have
  * to account for the amount of space the ARM code uses.
  */
-#define LCODE_ARM_WORDS  12 /* word count of the [read/write]l_n scratch code */
+#define LCODE_ARM_WORDS  26 /* word count of the [read/write]l_n scratch code */
 #define LCODE_ARM_SIZE   (LCODE_ARM_WORDS << 2) /* code size in bytes */
 #define LCODE_MAX_TOTAL  0x100 /* max. words in buffer */
 #define LCODE_MAX_WORDS  (LCODE_MAX_TOTAL - LCODE_ARM_WORDS) /* data words */
@@ -270,17 +270,33 @@ static void aw_fel_readl_n(feldev_handle *dev, uint32_t addr,
 
 	assert(LCODE_MAX_WORDS < 256); /* protect against corruption of ARM code */
 	uint32_t arm_code[] = {
-		htole32(0xe59f0020), /* ldr  r0, [pc, #32] ; ldr r0,[read_addr]  */
-		htole32(0xe28f1024), /* add  r1, pc, #36   ; adr r1, read_data   */
-		htole32(0xe59f201c), /* ldr  r2, [pc, #28] ; ldr r2,[read_count] */
-		htole32(0xe3520000 + LCODE_MAX_WORDS), /* cmp	r2, #LCODE_MAX_WORDS */
-		htole32(0xc3a02000 + LCODE_MAX_WORDS), /* movgt	r2, #LCODE_MAX_WORDS */
-		/* read_loop: */
-		htole32(0xe2522001), /* subs r2, r2, #1    ; r2 -= 1             */
-		htole32(0x412fff1e), /* bxmi lr            ; return if (r2 < 0)  */
-		htole32(0xe4903004), /* ldr  r3, [r0], #4  ; load and post-inc   */
-		htole32(0xe4813004), /* str  r3, [r1], #4  ; store and post-inc  */
-		htole32(0xeafffffa), /* b    read_loop                           */
+		/* <fel_readl_n>: */
+		htole32(0x000302b7), /* 10078:  lui   t0,0x30                 */
+		htole32(0x0132829b), /* 1007c:  addiw t0,t0,19                */
+		htole32(0x7c22a073), /* 10080:  csrs  mcor,t0                 */
+		htole32(0x00030337), /* 10084:  lui   t1,0x30                 */
+		htole32(0x0103031b), /* 10088:  addiw t1,t1,16                */
+		/* <wait_flush_cache_readl>: */
+		htole32(0x7c2022f3), /* 1008c:  csrr  t0,mcor                 */
+		htole32(0x0062f2b3), /* 10090:  and   t0,t0,t1                */
+		htole32(0xfe029ce3), /* 10094:  bnez  t0,1008c <wait_flush_cache_readl> */
+		htole32(0x00000297), /* 10098:  auipc t0,0x0                  */
+		htole32(0x0402e283), /* 1009c:  lwu   t0,64(t0)               */
+		htole32(0x00000317), /* 100a0:  auipc t1,0x0                  */
+		htole32(0x04030313), /* 100a4:  addi  t1,t1,64                */
+		htole32(0x00000397), /* 100a8:  auipc t2,0x0                  */
+		htole32(0x0343e383), /* 100ac:  lwu   t2,52(t2)               */
+		htole32(0x00000e13 + (LCODE_MAX_WORDS << 20)), /* 10090:  li	t3,LCODE_MAX_WORDS */
+		htole32(0x007e5463), /* 100b4:  bge   t3,t2,100bc <read_loop> */
+		htole32(0x01c003b3), /* 100b8:  add   t2,zero,t3              */
+		/* <read_loop>: */
+		htole32(0xfff38393), /* 100bc:  addi  t2,t2,-1                */
+		htole32(0x0002ee03), /* 100c0:  lwu   t3,0(t0)                */
+		htole32(0x01c32023), /* 100c4:  sw    t3,0(t1)                */
+		htole32(0x00428293), /* 100c8:  addi  t0,t0,4                 */
+		htole32(0x00430313), /* 100cc:  addi  t1,t1,4                 */
+		htole32(0xfe0396e3), /* 100d0:  bnez  t2,100bc <read_loop>    */
+		htole32(0x00008067), /* 100d4:  ret                           */
 		htole32(addr),       /* read_addr */
 		htole32(count)       /* read_count */
 		/* read_data (buffer) follows, i.e. values go here */
@@ -332,18 +348,33 @@ static void aw_fel_writel_n(feldev_handle *dev, uint32_t addr,
 	 * so we'll claim the maximum total number of words (0x100) here.
 	 */
 	uint32_t arm_code[LCODE_MAX_TOTAL] = {
-		htole32(0xe59f0020), /* ldr  r0, [pc, #32] ; ldr r0,[write_addr] */
-		htole32(0xe28f1024), /* add  r1, pc, #36   ; adr r1, write_data  */
-		htole32(0xe59f201c), /* ldr  r2, [pc, #28] ; ldr r2,[write_count]*/
-		htole32(0xe3520000 + LCODE_MAX_WORDS), /* cmp	r2, #LCODE_MAX_WORDS */
-		htole32(0xc3a02000 + LCODE_MAX_WORDS), /* movgt	r2, #LCODE_MAX_WORDS */
-		/* write_loop: */
-		htole32(0xe2522001), /* subs r2, r2, #1    ; r2 -= 1             */
-		htole32(0x412fff1e), /* bxmi lr            ; return if (r2 < 0)  */
-		htole32(0xe4913004), /* ldr  r3, [r1], #4  ; load and post-inc   */
-		htole32(0xe4803004), /* str  r3, [r0], #4  ; store and post-inc  */
-		htole32(0xeafffffa), /* b    write_loop                          */
-		htole32(addr),       /* write_addr */
+		/* <fel_writel_n>: */
+		htole32(0x000302b7), /* 100e4:  lui   t0,0x30                 */
+		htole32(0x0132829b), /* 100e8:  addiw t0,t0,19                */
+		htole32(0x7c22a073), /* 100ec:  csrs  mcor,t0                 */
+		htole32(0x00030337), /* 100f0:  lui   t1,0x30                 */
+		htole32(0x0103031b), /* 100f4:  addiw t1,t1,16                */
+		/* <wait_flush_cache_writel>: */
+		htole32(0x7c2022f3), /* 100f8:  csrr  t0,mcor                 */
+		htole32(0x0062f2b3), /* 100fc:  and   t0,t0,t1                */
+		htole32(0xfe029ce3), /* 10100:  bnez  t0,100f8 <wait_flush_cache_writel> */
+		htole32(0x00000297), /* 10104:  auipc t0,0x0                  */
+		htole32(0x0402e283), /* 10108:  lwu   t0,64(t0)               */
+		htole32(0x00000317), /* 1010c:  auipc t1,0x0                  */
+		htole32(0x04030313), /* 10110:  addi  t1,t1,64                */
+		htole32(0x00000397), /* 10114:  auipc t2,0x0                  */
+		htole32(0x0343e383), /* 10118:  lwu   t2,52(t2)               */
+		htole32(0x00000e13 + (LCODE_MAX_WORDS << 20)), /* 10090:  li	t3,LCODE_MAX_WORDS */
+		htole32(0x007e5463), /* 10120:  bge   t3,t2,10128 <write_loop> */
+		htole32(0x01c003b3), /* 10124:  add   t2,zero,t3              */
+		/* <write_loop>: */
+		htole32(0xfff38393), /* 10128:  addi  t2,t2,-1                */
+		htole32(0x00036e03), /* 1012c:  lwu   t3,0(t1)                */
+		htole32(0x01c2a023), /* 10130:  sw    t3,0(t0)                */
+		htole32(0x00428293), /* 10134:  addi  t0,t0,4                 */
+		htole32(0x00430313), /* 10138:  addi  t1,t1,4                 */
+		htole32(0xfe0396e3), /* 1013c:  bnez  t2,10128 <write_loop>   */
+		htole32(0x00008067), /* 10140:  ret                           */		htole32(addr),       /* write_addr */
 		htole32(count)       /* write_count */
 		/* write_data (buffer) follows, i.e. values taken from here */
 	};
@@ -397,32 +428,55 @@ static void fel_memcpy_up(feldev_handle *dev,
 	 * copy "upwards", increasing destination and source addresses
 	 */
 	uint32_t arm_code[] = {
-		htole32(0xe59f0054), /* ldr   r0, [pc, #84] ; ldr r0, [dst_addr] */
-		htole32(0xe59f1054), /* ldr   r1, [pc, #84] ; ldr r1, [src_addr] */
-		htole32(0xe59f2054), /* ldr   r2, [pc, #84] ; ldr r2, [size]     */
-		htole32(0xe0413000), /* sub   r3, r1, r0    ; r3 = r1 - r0       */
-		htole32(0xe3130003), /* tst   r3, #3        ; test lower bits    */
-		htole32(0x1a00000b), /* bne   copyup_tail   ; unaligned copying  */
-		/* copyup_head: */
-		htole32(0xe3110003), /* tst   r1, #3        ; word-aligned?      */
-		htole32(0x0a000004), /* beq   copyup_loop                        */
-		htole32(0xe4d13001), /* ldrb  r3, [r1], #1  ; load and post-inc  */
-		htole32(0xe4c03001), /* strb  r3, [r0], #1  ; store and post-inc */
-		htole32(0xe2522001), /* subs  r2, r2, #1    ; r2 -= 1            */
-		htole32(0x5afffff9), /* bpl   copyup_head   ; while (r2 >= 0)    */
-		htole32(0xe12fff1e), /* bx    lr            ; early return       */
-		/* copyup_loop: */
-		htole32(0xe2522004), /* subs  r2, r2, #4    ; r2 -= 4            */
-		htole32(0x54913004), /* ldrpl r3, [r1], #4  ; load and post-inc  */
-		htole32(0x54803004), /* strpl r3, [r0], #4  ; store and post-inc */
-		htole32(0x5afffffb), /* bpl   copyup_loop   ; while (r2 >= 0)    */
-		htole32(0xe2822004), /* add   r2, r2, #4    ; remaining bytes    */
-		/* copyup_tail: */
-		htole32(0xe2522001), /* subs  r2, r2, #1    ; r2 -= 1            */
-		htole32(0x412fff1e), /* bxmi  lr            ; return if (r2 < 0) */
-		htole32(0xe4d13001), /* ldrb  r3, [r1], #1  ; load and post-inc  */
-		htole32(0xe4c03001), /* strb  r3, [r0], #1  ; store and post-inc */
-		htole32(0xeafffffa), /* b     copyup_tail                        */
+		/* <fel_memcpy_up>: */
+		htole32(0x000302b7), /* 10078:  lui   t0,0x30                 */
+		htole32(0x0132829b), /* 1007c:  addiw t0,t0,19                */
+		htole32(0x7c22a073), /* 10080:  csrs  mcor,t0                 */
+		htole32(0x00030337), /* 10084:  lui   t1,0x30                 */
+		htole32(0x0103031b), /* 10088:  addiw t1,t1,16                */
+		/* <wait_flush_cache_up>: */
+		htole32(0x7c2022f3), /* 1008c:  csrr  t0,mcor                 */
+		htole32(0x0062f2b3), /* 10090:  and   t0,t0,t1                */
+		htole32(0xfe029ce3), /* 10094:  bnez  t0,1008c <wait_flush_cache_up> */
+		htole32(0x00000297), /* 10098:  auipc t0,0x0                  */
+		htole32(0x0882a283), /* 1009c:  lw    t0,136(t0)              */
+		htole32(0x00000317), /* 100a0:  auipc t1,0x0                  */
+		htole32(0x08432303), /* 100a4:  lw    t1,132(t1)              */
+		htole32(0x00000397), /* 100a8:  auipc t2,0x0                  */
+		htole32(0x0803a383), /* 100ac:  lw    t2,128(t2)              */
+		htole32(0x40530e33), /* 100b0:  sub   t3,t1,t0                */
+		htole32(0x003e7e93), /* 100b4:  andi  t4,t3,3                 */
+		htole32(0x040e9463), /* 100b8:  bnez  t4,10100 <copyup_tail>  */
+		/* <copyup_head>: */
+		htole32(0x00337e93), /* 100bc:  andi  t4,t1,3                 */
+		htole32(0x020e8063), /* 100c0:  beqz  t4,100e0 <copyup_loop>  */
+		htole32(0x00030e03), /* 100c4:  lb    t3,0(t1)                */
+		htole32(0x00130313), /* 100c8:  addi  t1,t1,1                 */
+		htole32(0x01c28023), /* 100cc:  sb    t3,0(t0)                */
+		htole32(0x00128293), /* 100d0:  addi  t0,t0,1                 */
+		htole32(0xfff38393), /* 100d4:  addi  t2,t2,-1                */
+		htole32(0xfe03d2e3), /* 100d8:  bgez  t2,100bc <copyup_head>  */
+		htole32(0x00008067), /* 100dc:  ret                           */
+		/* <copyup_loop>: */
+		htole32(0xffc38393), /* 100e0:  addi  t2,t2,-4                */
+		htole32(0x0003cc63), /* 100e4:  bltz  t2,100fc <copyup_loop_end> */
+		htole32(0x00032e03), /* 100e8:  lw    t3,0(t1)                */
+		htole32(0x00430313), /* 100ec:  addi  t1,t1,4                 */
+		htole32(0x01c2a023), /* 100f0:  sw    t3,0(t0)                */
+		htole32(0x00428293), /* 100f4:  addi  t0,t0,4                 */
+		htole32(0xfe9ff06f), /* 100f8:  j     100e0 <copyup_loop>     */
+		/* <copyup_loop_end>: */
+		htole32(0x00438393), /* 100fc:  addi  t2,t2,4                 */
+		/* <copyup_tail>: */
+		htole32(0xfff38393), /* 10100:  addi  t2,t2,-1                */
+		htole32(0x0003cc63), /* 10104:  bltz  t2,1011c <copyup_ret>   */
+		htole32(0x00030e03), /* 10108:  lb    t3,0(t1)                */
+		htole32(0x00130313), /* 1010c:  addi  t1,t1,1                 */
+		htole32(0x01c28023), /* 10110:  sb    t3,0(t0)                */
+		htole32(0x00128293), /* 10114:  addi  t0,t0,1                 */
+		htole32(0xfe9ff06f), /* 10118:  j     10100 <copyup_tail>     */
+		/* <copyup_ret>: */
+		htole32(0x00008067), /* 1011c:  ret                           */
 
 		htole32(dst_addr), /* destination address */
 		htole32(src_addr), /* source address */
@@ -441,33 +495,57 @@ static void fel_memcpy_down(feldev_handle *dev,
 	 * for memory indexing relative to the base addresses in r0 and r1.
 	 */
 	uint32_t arm_code[] = {
-		htole32(0xe59f0058), /* ldr   r0, [pc, #88] ; ldr r0, [dst_addr] */
-		htole32(0xe59f1058), /* ldr   r1, [pc, #88] ; ldr r1, [src_addr] */
-		htole32(0xe59f2058), /* ldr   r2, [pc, #88] ; ldr r2, [size]     */
-		htole32(0xe0403001), /* sub   r3, r0, r1    ; r3 = r0 - r1       */
-		htole32(0xe3130003), /* tst   r3, #3        ; test lower bits    */
-		htole32(0x1a00000c), /* bne   copydn_tail   ; unaligned copying  */
-		/* copydn_head: */
-		htole32(0xe0813002), /* add   r3, r1, r2    ; r3 = r1 + r2       */
-		htole32(0xe3130003), /* tst   r3, #3        ; word-aligned?      */
-		htole32(0x0a000004), /* beq   copydn_loop                        */
-		htole32(0xe2522001), /* subs  r2, r2, #1    ; r2 -= 1            */
-		htole32(0x412fff1e), /* bxmi  lr            ; early return       */
-		htole32(0xe7d13002), /* ldrb  r3, [r1, r2]  ; load byte          */
-		htole32(0xe7c03002), /* strb  r3, [r0, r2]  ; store byte         */
-		htole32(0xeafffff7), /* b     copydn_head                        */
-		/* copydn_loop: */
-		htole32(0xe2522004), /* subs  r2, r2, #4    ; r2 -= 4            */
-		htole32(0x57913002), /* ldrpl r3, [r1, r2]  ; load word          */
-		htole32(0x57803002), /* strpl r3, [r0, r2]  ; store word         */
-		htole32(0x5afffffb), /* bpl   copydn_loop   ; while (r2 >= 0)    */
-		htole32(0xe2822004), /* add   r2, r2, #4    ; remaining bytes    */
-		/* copydn_tail: */
-		htole32(0xe2522001), /* subs  r2, r2, #1    ; r2 -= 1            */
-		htole32(0x412fff1e), /* bxmi  lr            ; return if (r2 < 0) */
-		htole32(0xe7d13002), /* ldrb  r3, [r1, r2]  ; load byte          */
-		htole32(0xe7c03002), /* strb  r3, [r0, r2]  ; store byte         */
-		htole32(0xeafffffa), /* b     copydn_tail                        */
+		/* <fel_memcpy_down>: */
+		htole32(0x000302b7), /* 1012c:  lui   t0,0x30                 */
+		htole32(0x0132829b), /* 10130:  addiw t0,t0,19                */
+		htole32(0x7c22a073), /* 10134:  csrs  mcor,t0                 */
+		htole32(0x00030337), /* 10138:  lui   t1,0x30                 */
+		htole32(0x0103031b), /* 1013c:  addiw t1,t1,16                */
+		/* <wait_flush_cache_down>: */
+		htole32(0x7c2022f3), /* 10140:  csrr  t0,mcor                 */
+		htole32(0x0062f2b3), /* 10144:  and   t0,t0,t1                */
+		htole32(0xfe029ce3), /* 10148:  bnez  t0,10140 <wait_flush_cache_down> */
+		htole32(0x00000297), /* 1014c:  auipc t0,0x0                  */
+		htole32(0x0902a283), /* 10150:  lw    t0,144(t0)              */
+		htole32(0x00000317), /* 10154:  auipc t1,0x0                  */
+		htole32(0x08c32303), /* 10158:  lw    t1,140(t1)              */
+		htole32(0x00000397), /* 1015c:  auipc t2,0x0                  */
+		htole32(0x0883a383), /* 10160:  lw    t2,136(t2)              */
+		htole32(0x007282b3), /* 10164:  add   t0,t0,t2                */
+		htole32(0x00730333), /* 10168:  add   t1,t1,t2                */
+		htole32(0x40530e33), /* 1016c:  sub   t3,t1,t0                */
+		htole32(0x003e7e93), /* 10170:  andi  t4,t3,3                 */
+		htole32(0x040e9463), /* 10174:  bnez  t4,101bc <copydn_tail>  */
+		/* <copydn_head>: */
+		htole32(0x00337e93), /* 10178:  andi  t4,t1,3                 */
+		htole32(0x020e8063), /* 1017c:  beqz  t4,1019c <copydn_loop>  */
+		htole32(0xfff30313), /* 10180:  addi  t1,t1,-1                */
+		htole32(0x00030e03), /* 10184:  lb    t3,0(t1)                */
+		htole32(0xfff28293), /* 10188:  addi  t0,t0,-1                */
+		htole32(0x01c28023), /* 1018c:  sb    t3,0(t0)                */
+		htole32(0xfff38393), /* 10190:  addi  t2,t2,-1                */
+		htole32(0xfe03d2e3), /* 10194:  bgez  t2,10178 <copydn_head>  */
+		htole32(0x00008067), /* 10198:  ret                           */
+		/* <copydn_loop>: */
+		htole32(0xffc38393), /* 1019c:  addi  t2,t2,-4                */
+		htole32(0x0003cc63), /* 101a0:  bltz  t2,101b8 <copydn_loop_end> */
+		htole32(0xffc30313), /* 101a4:  addi  t1,t1,-4                */
+		htole32(0x00032e03), /* 101a8:  lw    t3,0(t1)                */
+		htole32(0xffc28293), /* 101ac:  addi  t0,t0,-4                */
+		htole32(0x01c2a023), /* 101b0:  sw    t3,0(t0)                */
+		htole32(0xfe9ff06f), /* 101b4:  j     1019c <copydn_loop>     */
+		/* <copydn_loop_end>: */
+		htole32(0x00438393), /* 101b8:  addi  t2,t2,4                 */
+		/* <copydn_tail>: */
+		htole32(0xfff38393), /* 101bc:  addi  t2,t2,-1                */
+		htole32(0x0003cc63), /* 101c0:  bltz  t2,101d8 <copydn_ret>   */
+		htole32(0xfff30313), /* 101c4:  addi  t1,t1,-1                */
+		htole32(0x00030e03), /* 101c8:  lb    t3,0(t1)                */
+		htole32(0xfff28293), /* 101cc:  addi  t0,t0,-1                */
+		htole32(0x01c28023), /* 101d0:  sb    t3,0(t0)                */
+		htole32(0xfe9ff06f), /* 101d4:  j     101bc <copydn_tail>     */
+		/* <copydn_ret>: */
+		htole32(0x00008067), /* 101d8:  ret                           */
 
 		htole32(dst_addr), /* destination address */
 		htole32(src_addr), /* source address */
@@ -498,14 +576,7 @@ void fel_clrsetbits_le32(feldev_handle *dev,
 			 uint32_t addr, uint32_t clrbits, uint32_t setbits)
 {
 	uint32_t arm_code[] = {
-		htole32(0xe59f0018), /*    0:  ldr   r0, [addr]              */
-		htole32(0xe5901000), /*    4:  ldr   r1, [r0]                */
-		htole32(0xe59f2014), /*    8:  ldr   r2, [clrbits]           */
-		htole32(0xe1c11002), /*    c:  bic   r1, r1, r2              */
-		htole32(0xe59f2010), /*   10:  ldr   r2, [setbits]           */
-		htole32(0xe1811002), /*   14:  orr   r1, r1, r2              */
-		htole32(0xe5801000), /*   18:  str   r1, [r0]                */
-		htole32(0xe12fff1e), /*   1c:  bx    lr                      */
+#include "thunks/clrsetbits.h"
 
 		htole32(addr),    /* address */
 		htole32(clrbits), /* bits to clear */
@@ -523,26 +594,7 @@ void fel_clrsetbits_le32(feldev_handle *dev,
 static void fel_get_sid_registers(feldev_handle *dev, uint32_t *result)
 {
 	uint32_t arm_code[] = {
-		htole32(0xe59f0040), /*    0:  ldr   r0, [pc, #64]           */
-		htole32(0xe3a01000), /*    4:  mov   r1, #0                  */
-		htole32(0xe28f303c), /*    8:  add   r3, pc, #60             */
-		/* <sid_read_loop>: */
-		htole32(0xe1a02801), /*    c:  lsl   r2, r1, #16             */
-		htole32(0xe3822b2b), /*   10:  orr   r2, r2, #44032          */
-		htole32(0xe3822002), /*   14:  orr   r2, r2, #2              */
-		htole32(0xe5802040), /*   18:  str   r2, [r0, #64]           */
-		/* <sid_read_wait>: */
-		htole32(0xe5902040), /*   1c:  ldr   r2, [r0, #64]           */
-		htole32(0xe3120002), /*   20:  tst   r2, #2                  */
-		htole32(0x1afffffc), /*   24:  bne   1c <sid_read_wait>      */
-		htole32(0xe5902060), /*   28:  ldr   r2, [r0, #96]           */
-		htole32(0xe7832001), /*   2c:  str   r2, [r3, r1]            */
-		htole32(0xe2811004), /*   30:  add   r1, r1, #4              */
-		htole32(0xe3510010), /*   34:  cmp   r1, #16                 */
-		htole32(0x3afffff3), /*   38:  bcc   c <sid_read_loop>       */
-		htole32(0xe3a02000), /*   3c:  mov   r2, #0                  */
-		htole32(0xe5802040), /*   40:  str   r2, [r0, #64]           */
-		htole32(0xe12fff1e), /*   44:  bx    lr                      */
+#include "thunks/sid_read_root.h"
 		htole32(dev->soc_info->sid_base), /* SID base addr */
 		/* retrieved SID values go here */
 	};
