@@ -427,6 +427,9 @@ void aw_fel_spiflash_info(feldev_handle *dev)
 	case 0xEF:
 		manufacturer = "Winbond";
 		break;
+	case 0x0B:
+		manufacturer = "XTX";
+		break;
 	default:
 		manufacturer = "Unknown";
 		break;
